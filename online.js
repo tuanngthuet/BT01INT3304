@@ -1,475 +1,307 @@
 /**
  * Oẳn Tù Tì v2 (OTTv2) - Multiplayer Online Manager
- * Sử dụng thư viện playhtml (https://playhtml.fun)
- * - Lobby chung: danh sách phòng mở, ai cũng có thể xem và vào
- * - Mỗi phòng có kênh riêng đồng bộ trạng thái (host/guest/started)
- * - Nước đi & chat dùng dispatchPlayEvent (fire-and-forget, realtime)
+ * Hỗ trợ đa kết nối: Socket.IO Server hoặc WebRTC PeerJS (P2P Serverless)
  */
 
 class OnlineManager {
   constructor(game) {
     this.game = game;
-    this.myRole = null;      // 1 (P1/Xanh) | 2 (P2/Đỏ)
+    this.socket = null;
+    this.peer = null;
+    this.conn = null;
+    this.myRole = null; // 1 (P1) | 2 (P2) | 'spectator'
     this.roomCode = null;
     this.isHost = false;
-    this.myName = 'Người chơi ' + Math.floor(1000 + Math.random() * 9000);
 
-    // playhtml channels
-    this._lobbyChannel = null;   // danh sách phòng mở
-    this._roomChannel  = null;   // trạng thái phòng hiện tại
-    this._playhtmlReady = false;
-
-    this._initPlayhtml();
     this.initUI();
+    this.tryInitSocketServer();
   }
-
-  // ─── Khởi tạo playhtml ───────────────────────────────────────────────────
-
-  _initPlayhtml() {
-    if (typeof window.playhtml !== 'undefined') {
-      this._setupPlayhtml();
-    } else {
-      window.addEventListener('playhtml-ready', () => this._setupPlayhtml(), { once: true });
-    }
-  }
-
-  _setupPlayhtml() {
-    const ph = window.playhtml;
-    if (!ph) {
-      console.warn('[playhtml] window.playhtml chưa sẵn sàng.');
-      return;
-    }
-
-    // Khởi tạo playhtml với room mặc định là "ott-lobby"
-    // và đăng ký các event handler realtime
-    ph.init({
-      room: 'ott-lobby',
-      events: {
-        ott_move: {
-          type: 'ott_move',
-          onEvent: (payload) => this._onRemoteMove(payload),
-        },
-        ott_start: {
-          type: 'ott_start',
-          onEvent: (payload) => this._onRemoteStart(payload),
-        },
-        ott_chat: {
-          type: 'ott_chat',
-          onEvent: (payload) => this._onRemoteChat(payload),
-        },
-        ott_leave: {
-          type: 'ott_leave',
-          onEvent: (payload) => this._onOpponentLeft(payload),
-        },
-      },
-      onError: () => {
-        console.warn('[playhtml] Không kết nối được tới playhtml server.');
-        this._setStatus('⚠️ Không kết nối được playhtml. Kiểm tra mạng.', 'error');
-      },
-    });
-
-    this._playhtmlReady = true;
-    console.log('[playhtml] Đã sẵn sàng.');
-
-    // Mở kênh lobby để theo dõi danh sách phòng
-    this._lobbyChannel = ph.createPageData('ott-lobby-rooms', { rooms: [] });
-    this._lobbyChannel.onUpdate((data) => this._renderLobby(data.rooms));
-
-    // Render lần đầu ngay khi có dữ liệu
-    const initial = this._lobbyChannel.getData();
-    if (initial) this._renderLobby(initial.rooms);
-  }
-
-  // ─── Lobby: danh sách phòng ──────────────────────────────────────────────
-
-  _renderLobby(rooms) {
-    const listEl = document.getElementById('lobbyRoomList');
-    if (!listEl) return;
-
-    if (!rooms || rooms.length === 0) {
-      listEl.innerHTML = '<div class="lobby-empty">Chưa có phòng nào. Hãy tạo phòng mới!</div>';
-      return;
-    }
-
-    listEl.innerHTML = rooms.map((r) => `
-      <div class="lobby-room-item" data-code="${r.roomCode}">
-        <div class="lobby-room-info">
-          <span class="lobby-room-code">🎮 ${r.roomCode}</span>
-          <span class="lobby-room-host">Host: ${r.hostName}</span>
-          <span class="lobby-room-status ${r.status === 'waiting' ? 'waiting' : 'full'}">
-            ${r.status === 'waiting' ? '⏳ Chờ người chơi' : '🔒 Đã đủ người'}
-          </span>
-        </div>
-        ${r.status === 'waiting'
-          ? `<button class="btn-primary btn-join-lobby" onclick="window.ottOnline.joinRoom('${r.roomCode}')">Vào phòng ⚔️</button>`
-          : `<button class="btn-secondary" disabled>Đã đủ</button>`
-        }
-      </div>
-    `).join('');
-  }
-
-  _addRoomToLobby(roomCode, hostName) {
-    if (!this._lobbyChannel) return;
-    this._lobbyChannel.setData((draft) => {
-      // Tránh trùng
-      draft.rooms = draft.rooms.filter(r => r.roomCode !== roomCode);
-      draft.rooms.unshift({
-        roomCode,
-        hostName,
-        createdAt: Date.now(),
-        status: 'waiting',
-      });
-      // Giữ tối đa 20 phòng gần nhất
-      if (draft.rooms.length > 20) draft.rooms = draft.rooms.slice(0, 20);
-    });
-  }
-
-  _updateRoomLobbyStatus(roomCode, status) {
-    if (!this._lobbyChannel) return;
-    this._lobbyChannel.setData((draft) => {
-      const room = draft.rooms.find(r => r.roomCode === roomCode);
-      if (room) room.status = status;
-    });
-  }
-
-  _removeRoomFromLobby(roomCode) {
-    if (!this._lobbyChannel) return;
-    this._lobbyChannel.setData((draft) => {
-      draft.rooms = draft.rooms.filter(r => r.roomCode !== roomCode);
-    });
-  }
-
-  // ─── Xử lý event từ đối thủ ─────────────────────────────────────────────
-
-  _onRemoteMove(payload) {
-    if (!payload || payload.roomCode !== this.roomCode) return;
-    if (payload.role === this.myRole) return; // bỏ qua nước của mình bị echo
-
-    this.game.executeMove(
-      payload.fromCol, payload.fromRow,
-      payload.toCol,   payload.toRow,
-      true
-    );
-    this._lockBoardForRole();
-  }
-
-  _onRemoteStart(payload) {
-    if (!payload || payload.roomCode !== this.roomCode) return;
-    if (this.myRole === 2) {
-      document.getElementById('onlineModal')?.classList.remove('show');
-      this.game.restart();
-      this._setStatus('🌐 Chế độ Online: Bạn là Người chơi 2 (Đỏ). Đang đợi P1 đi...');
-      this._lockBoardForRole();
-    }
-  }
-
-  _onRemoteChat(payload) {
-    if (!payload || payload.roomCode !== this.roomCode) return;
-    this._appendChat(`[${payload.senderName || 'Đối thủ'}]`, payload.text);
-  }
-
-  _onOpponentLeft(payload) {
-    if (!payload || payload.roomCode !== this.roomCode) return;
-    alert('Đối thủ đã ngắt kết nối!');
-    this._setStatus('⚠️ Đối thủ đã rời phòng.');
-    // Đưa phòng trở lại lobby nếu host vẫn còn
-    if (this.isHost && this.roomCode) {
-      this._updateRoomLobbyStatus(this.roomCode, 'waiting');
-      this._openRoomChannel(this.roomCode); // reset channel phòng
-    }
-  }
-
-  _onRoomStateUpdate(state) {
-    if (!state) return;
-
-    const createStatus = document.getElementById('createStatus');
-    const joinStatus   = document.getElementById('joinStatus');
-
-    if (this.isHost) {
-      if (state.guestJoined && !state.started) {
-        if (createStatus) createStatus.textContent = '✅ Đối thủ đã vào! Bắt đầu trận...';
-        this._startGameAsHost();
-      }
-    } else {
-      if (!state.hostJoined) {
-        if (joinStatus) joinStatus.textContent = '⚠️ Host chưa sẵn sàng hoặc phòng đã đóng.';
-      }
-    }
-  }
-
-  // ─── Tạo / mở kênh phòng ────────────────────────────────────────────────
-
-  _openRoomChannel(roomCode) {
-    const ph = window.playhtml;
-    if (!ph) return;
-
-    if (this._roomChannel) {
-      this._roomChannel.destroy();
-      this._roomChannel = null;
-    }
-
-    this._roomChannel = ph.createPageData(`ott-room-${roomCode}`, {
-      hostJoined:  false,
-      guestJoined: false,
-      started:     false,
-    });
-    this._roomChannel.onUpdate((state) => this._onRoomStateUpdate(state));
-  }
-
-  // ─── Giao diện người dùng ────────────────────────────────────────────────
 
   initUI() {
-    const tabCreate    = document.getElementById('tabCreateRoom');
-    const tabJoin      = document.getElementById('tabJoinRoom');
-    const tabLobby     = document.getElementById('tabLobby');
+    const tabCreate = document.getElementById('tabCreateRoom');
+    const tabJoin = document.getElementById('tabJoinRoom');
     const createContent = document.getElementById('createRoomContent');
-    const joinContent  = document.getElementById('joinRoomContent');
-    const lobbyContent = document.getElementById('lobbyContent');
-    const modal        = document.getElementById('onlineModal');
-    const btnClose     = document.getElementById('btnCloseOnline');
+    const joinContent = document.getElementById('joinRoomContent');
+    const modal = document.getElementById('onlineModal');
+    const btnClose = document.getElementById('btnCloseOnline');
 
-    // Helper: switch tabs
-    const showTab = (active, contentEl) => {
-      [tabCreate, tabJoin, tabLobby].forEach(t => t?.classList.remove('active'));
-      active?.classList.add('active');
-      [createContent, joinContent, lobbyContent].forEach(c => {
-        if (c) c.style.display = 'none';
+    if (tabCreate && tabJoin) {
+      tabCreate.addEventListener('click', () => {
+        tabCreate.classList.add('active');
+        tabJoin.classList.remove('active');
+        createContent.style.display = 'block';
+        joinContent.style.display = 'none';
       });
-      if (contentEl) contentEl.style.display = 'block';
-    };
 
-    tabCreate?.addEventListener('click', () => showTab(tabCreate, createContent));
-    tabJoin?.addEventListener('click',   () => showTab(tabJoin, joinContent));
-    tabLobby?.addEventListener('click',  () => showTab(tabLobby, lobbyContent));
-
-    btnClose?.addEventListener('click', () => modal?.classList.remove('show'));
-
-    // Tạo phòng
-    document.getElementById('btnDoCreateRoom')?.addEventListener('click', () => this.createRoom());
-
-    // Tham gia bằng mã tay
-    document.getElementById('btnDoJoinRoom')?.addEventListener('click', () => {
-      const code = document.getElementById('inputJoinCode')?.value.trim();
-      if (code) this.joinRoom(code);
-      else alert('Vui lòng nhập mã phòng!');
-    });
-
-    // Copy mã phòng
-    document.getElementById('btnCopyCode')?.addEventListener('click', () => {
-      const input = document.getElementById('createdRoomCode');
-      input?.select();
-      navigator.clipboard.writeText(input?.value ?? '').then(() => {
-        const btn = document.getElementById('btnCopyCode');
-        btn.textContent = 'Đã chép! ✅';
-        setTimeout(() => (btn.textContent = 'Sao chép'), 2000);
+      tabJoin.addEventListener('click', () => {
+        tabJoin.classList.add('active');
+        tabCreate.classList.remove('active');
+        joinContent.style.display = 'block';
+        createContent.style.display = 'none';
       });
-    });
-
-    // Callback nước đi từ game engine
-    this.game.onMoveCallback = (moveData) => this.sendMove(moveData);
-  }
-
-  // ─── Tạo phòng (Host = P1 Xanh) ─────────────────────────────────────────
-
-  createRoom() {
-    if (!this._playhtmlReady) {
-      alert('playhtml chưa sẵn sàng. Thử lại sau giây lát!');
-      return;
     }
 
+    if (btnClose) {
+      btnClose.addEventListener('click', () => modal.classList.remove('show'));
+    }
+
+    // Nút tạo phòng
+    const btnDoCreate = document.getElementById('btnDoCreateRoom');
+    if (btnDoCreate) {
+      btnDoCreate.addEventListener('click', () => this.createRoom());
+    }
+
+    // Nút tham gia phòng
+    const btnDoJoin = document.getElementById('btnDoJoinRoom');
+    if (btnDoJoin) {
+      btnDoJoin.addEventListener('click', () => {
+        const code = document.getElementById('inputJoinCode').value.trim();
+        if (code) {
+          this.joinRoom(code);
+        } else {
+          alert('Vui lòng nhập mã phòng!');
+        }
+      });
+    }
+
+    // Nút copy mã phòng
+    const btnCopy = document.getElementById('btnCopyCode');
+    if (btnCopy) {
+      btnCopy.addEventListener('click', () => {
+        const input = document.getElementById('createdRoomCode');
+        input.select();
+        navigator.clipboard.writeText(input.value).then(() => {
+          btnCopy.textContent = 'Đã chép! ✅';
+          setTimeout(() => btnCopy.textContent = 'Sao chép', 2000);
+        });
+      });
+    }
+
+    // Đăng ký callback nước đi từ game
+    this.game.onMoveCallback = (moveData) => {
+      this.sendMove(moveData);
+    };
+  }
+
+  /**
+   * Thử kết nối tới Socket.IO Server nếu có server đang chạy
+   */
+  tryInitSocketServer() {
+    if (typeof io !== 'undefined') {
+      try {
+        this.socket = io(window.location.origin, {
+          autoConnect: false,
+          reconnectionAttempts: 2,
+          timeout: 3000
+        });
+
+        this.socket.on('connect', () => {
+          console.log('[Socket.IO] Đã kết nối tới Game Server');
+        });
+
+        this.socket.on('room_created', (data) => {
+          this.handleRoomCreated(data.roomId, 1);
+        });
+
+        this.socket.on('player_joined', (data) => {
+          this.handlePlayerJoined(data);
+        });
+
+        this.socket.on('move_made', (moveData) => {
+          this.handleRemoteMove(moveData);
+        });
+
+        this.socket.on('opponent_left', () => {
+          alert('Đối thủ đã rời khỏi phòng!');
+          this.game.updateStatusSummary('⚠️ Đối thủ đã rời phòng.');
+        });
+      } catch (err) {
+        console.warn('[Socket.IO] Chưa mở server Socket.IO, sẽ dự phòng dùng WebRTC PeerJS');
+      }
+    }
+  }
+
+  /**
+   * Tạo phòng chơi mới
+   */
+  createRoom() {
     const roomCode = 'ott-' + Math.floor(1000 + Math.random() * 9000);
     this.roomCode = roomCode;
-    this.isHost   = true;
-    this.myRole   = 1;
+    this.isHost = true;
+    this.myRole = 1; // Host là Player 1 (Xanh)
 
-    // Cập nhật UI modal
-    const shareBox    = document.getElementById('roomShareBox');
-    const inputCode   = document.getElementById('createdRoomCode');
-    const statusBox   = document.getElementById('createStatus');
+    const shareBox = document.getElementById('roomShareBox');
+    const inputCode = document.getElementById('createdRoomCode');
+    const statusBox = document.getElementById('createStatus');
     const btnDoCreate = document.getElementById('btnDoCreateRoom');
 
-    if (shareBox)    shareBox.style.display = 'block';
-    if (inputCode)   inputCode.value = roomCode;
-    if (btnDoCreate) { btnDoCreate.disabled = true; btnDoCreate.textContent = 'Phòng đã tạo'; }
-    if (statusBox)   statusBox.textContent = `⏳ Phòng [${roomCode}] đã tạo. Đang chờ đối thủ...`;
+    shareBox.style.display = 'block';
+    inputCode.value = roomCode;
+    btnDoCreate.disabled = true;
+    btnDoCreate.textContent = 'Phòng đã sẵn sàng';
 
-    // Cập nhật sidebar
-    this._updateSidebar(roomCode, '👤 Người chơi 1 (Xanh) — Host');
+    statusBox.textContent = '⏳ Đang chờ người chơi thứ 2 tham gia...';
 
-    // Mở kênh phòng và đánh dấu host đã vào
-    this._openRoomChannel(roomCode);
-    this._roomChannel.setData((draft) => { draft.hostJoined = true; });
-
-    // Đăng ký phòng vào lobby chung
-    this._addRoomToLobby(roomCode, this.myName);
-  }
-
-  _startGameAsHost() {
-    const ph = window.playhtml;
-    if (!ph) return;
-
-    this._roomChannel?.setData((draft) => { draft.started = true; });
-    this._updateRoomLobbyStatus(this.roomCode, 'full');
-
-    ph.dispatchPlayEvent({
-      type: 'ott_start',
-      eventPayload: { roomCode: this.roomCode },
-    });
-
-    setTimeout(() => {
-      document.getElementById('onlineModal')?.classList.remove('show');
-      this.game.restart();
-      this._setStatus('🌐 Chế độ Online: Bạn là Người chơi 1 (Xanh). Lượt của bạn!');
-      this._lockBoardForRole();
-    }, 500);
-  }
-
-  // ─── Tham gia phòng (Guest = P2 Đỏ) ─────────────────────────────────────
-
-  joinRoom(roomCode) {
-    if (!this._playhtmlReady) {
-      alert('playhtml chưa sẵn sàng. Thử lại sau giây lát!');
+    // Thử dùng Socket.IO server trước
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('create_room', { roomId: roomCode });
       return;
     }
 
+    // Dự phòng không cần server: Dùng PeerJS WebRTC P2P
+    this.initPeerHost(roomCode, statusBox);
+  }
+
+  initPeerHost(roomCode, statusBox) {
+    if (typeof Peer === 'undefined') {
+      statusBox.textContent = '❌ Không tìm thấy thư viện kết nối mạng.';
+      return;
+    }
+
+    try {
+      this.peer = new Peer(roomCode);
+      this.peer.on('open', (id) => {
+        statusBox.textContent = `⏳ Đã tạo phòng [${id}]. Đang chờ đối thủ...`;
+      });
+
+      this.peer.on('connection', (conn) => {
+        this.conn = conn;
+        statusBox.textContent = '✅ Đối thủ đã vào phòng! Trận đấu bắt đầu!';
+
+        this.setupConnectionHandlers();
+
+        // Gửi thông báo bắt đầu trận đấu
+        setTimeout(() => {
+          this.conn.send({ type: 'start', role: 2 });
+          document.getElementById('onlineModal').classList.remove('show');
+          this.game.restart();
+          this.game.updateStatusSummary('🌐 Chế độ Online: Bạn là Người chơi 1 (Xanh). Lượt của bạn!');
+          this.lockBoardForRole();
+        }, 800);
+      });
+
+      this.peer.on('error', (err) => {
+        console.warn('Peer error:', err);
+        statusBox.textContent = `Lỗi mạng: ${err.type || 'Thử lại'}`;
+      });
+    } catch (e) {
+      console.error(e);
+      statusBox.textContent = 'Không thể khởi tạo P2P.';
+    }
+  }
+
+  /**
+   * Tham gia vào phòng đã có
+   */
+  joinRoom(roomCode) {
     this.roomCode = roomCode;
-    this.isHost   = false;
-    this.myRole   = 2;
+    this.isHost = false;
+    this.myRole = 2; // Khách là Player 2 (Đỏ)
 
     const statusBox = document.getElementById('joinStatus');
-    if (statusBox) statusBox.textContent = `⏳ Đang vào phòng ${roomCode}...`;
+    statusBox.textContent = `⏳ Đang kết nối tới phòng ${roomCode}...`;
 
-    // Mở kênh phòng
-    this._openRoomChannel(roomCode);
-
-    // Kiểm tra host đã tạo phòng chưa
-    const state = this._roomChannel.getData();
-    if (!state || !state.hostJoined) {
-      if (statusBox) statusBox.textContent = '⚠️ Không tìm thấy phòng. Kiểm tra lại mã.';
-      return;
-    }
-    if (state.guestJoined || state.started) {
-      if (statusBox) statusBox.textContent = '🔒 Phòng này đã đủ người.';
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('join_room', { roomId: roomCode });
       return;
     }
 
-    // Đăng ký vào phòng
-    this._roomChannel.setData((draft) => { draft.guestJoined = true; });
+    // Dùng WebRTC PeerJS
+    if (typeof Peer === 'undefined') {
+      statusBox.textContent = '❌ Không tải được thư viện mạng.';
+      return;
+    }
 
-    if (statusBox) statusBox.textContent = '✅ Đã vào phòng! Đang chờ host bắt đầu...';
-    this._updateSidebar(roomCode, '👤 Người chơi 2 (Đỏ) — Khách');
+    const guestId = 'guest-' + Math.floor(Math.random() * 10000);
+    this.peer = new Peer(guestId);
+
+    this.peer.on('open', () => {
+      this.conn = this.peer.connect(roomCode);
+      this.setupConnectionHandlers();
+
+      this.conn.on('open', () => {
+        statusBox.textContent = '✅ Đã kết nối thành công!';
+        setTimeout(() => {
+          document.getElementById('onlineModal').classList.remove('show');
+          this.game.restart();
+          this.game.updateStatusSummary('🌐 Chế độ Online: Bạn là Người chơi 2 (Đỏ). Đang đợi P1 đi...');
+          this.lockBoardForRole();
+        }, 800);
+      });
+    });
+
+    this.peer.on('error', (err) => {
+      statusBox.textContent = `❌ Lỗi kết nối: ${err.message || 'Không tìm thấy phòng'}`;
+    });
   }
 
-  // ─── Gửi nước đi ─────────────────────────────────────────────────────────
+  setupConnectionHandlers() {
+    if (!this.conn) return;
+
+    this.conn.on('data', (data) => {
+      if (data.type === 'move') {
+        this.game.executeMove(data.fromCol, data.fromRow, data.toCol, data.toRow, true);
+        this.lockBoardForRole();
+      } else if (data.type === 'start') {
+        this.game.restart();
+        this.lockBoardForRole();
+      }
+    });
+
+    this.conn.on('close', () => {
+      alert('Đối thủ đã ngắt kết nối!');
+      this.game.updateStatusSummary('⚠️ Đối thủ đã rời phòng.');
+    });
+  }
 
   sendMove(moveData) {
-    const ph = window.playhtml;
-    if (!this._playhtmlReady || !this.roomCode || !ph) return;
-
-    ph.dispatchPlayEvent({
-      type: 'ott_move',
-      eventPayload: { roomCode: this.roomCode, role: this.myRole, ...moveData },
-    });
-
-    this._lockBoardForRole();
+    if (this.conn && this.conn.open) {
+      this.conn.send({
+        type: 'move',
+        ...moveData
+      });
+      this.lockBoardForRole();
+    } else if (this.socket && this.socket.connected) {
+      this.socket.emit('make_move', {
+        roomId: this.roomCode,
+        moveData
+      });
+      this.lockBoardForRole();
+    }
   }
 
-  // ─── Chat ────────────────────────────────────────────────────────────────
-
-  sendChat(text) {
-    const ph = window.playhtml;
-    if (!this._playhtmlReady || !this.roomCode || !text || !ph) return;
-
-    ph.dispatchPlayEvent({
-      type: 'ott_chat',
-      eventPayload: { roomCode: this.roomCode, senderName: this.myName, text },
-    });
+  handleRemoteMove(moveData) {
+    this.game.executeMove(moveData.fromCol, moveData.fromRow, moveData.toCol, moveData.toRow, true);
+    this.lockBoardForRole();
   }
 
-  _appendChat(sender, text) {
-    const chatList = document.getElementById('chatList');
-    if (!chatList) return;
-    chatList.querySelector('.empty-history')?.remove();
-    const el = document.createElement('div');
-    el.className = 'history-entry';
-    el.textContent = `${sender}: ${text}`;
-    chatList.appendChild(el);
-    chatList.scrollTop = chatList.scrollHeight;
-  }
-
-  // ─── Khoá bảng khi không phải lượt ──────────────────────────────────────
-
-  _lockBoardForRole() {
+  /**
+   * Khóa không cho người chơi click quân cờ khi chưa đến lượt mình trong chế độ Online
+   */
+  lockBoardForRole() {
     if (this.game.mode !== 'online') return;
-    const origClick = this.game.handleCellClick.bind(this.game);
+
+    // Ghi đè hoặc kiểm tra lượt
+    const originalHandleClick = this.game.handleCellClick.bind(this.game);
     this.game.handleCellClick = (col, row) => {
       if (this.game.gameOver) return;
+
+      // Chỉ cho phép click nếu đúng lượt của mình
       if (this.game.currentTurn !== this.myRole) {
-        this._setStatus(`⏳ Đang đợi ${this.game.getTurnName(this.game.currentTurn)} đi...`);
+        this.game.updateStatusSummary(`⏳ Đang đợi ${this.game.getTurnName(this.game.currentTurn)} đi nước cờ...`);
         return;
       }
-      origClick(col, row);
+
+      originalHandleClick(col, row);
     };
-  }
-
-  // ─── Rời phòng ───────────────────────────────────────────────────────────
-
-  leaveRoom() {
-    const ph = window.playhtml;
-    if (this._playhtmlReady && this.roomCode && ph) {
-      ph.dispatchPlayEvent({
-        type: 'ott_leave',
-        eventPayload: { roomCode: this.roomCode },
-      });
-    }
-    if (this.isHost && this.roomCode) {
-      this._removeRoomFromLobby(this.roomCode);
-    }
-    this._roomChannel?.destroy();
-    this._roomChannel = null;
-    this.roomCode = null;
-    this.myRole   = null;
-    this.isHost   = false;
-  }
-
-  // ─── Helpers UI ──────────────────────────────────────────────────────────
-
-  _setStatus(msg) {
-    const el = document.getElementById('gameStatusSummary');
-    if (el) el.textContent = msg;
-    if (this.game?.updateStatusSummary) this.game.updateStatusSummary(msg);
-  }
-
-  _updateSidebar(roomCode, roleText) {
-    const roomDisplay = document.getElementById('activeRoomCodeDisplay');
-    const roleDisplay = document.getElementById('myRoleDisplay');
-    if (roomDisplay) roomDisplay.textContent = roomCode;
-    if (roleDisplay) roleDisplay.textContent = roleText;
   }
 }
 
-// ─── Bootstrap ───────────────────────────────────────────────────────────────
-
 window.addEventListener('DOMContentLoaded', () => {
+  // Khi game đã sẵn sàng, gán online manager
   setTimeout(() => {
     if (window.ottGame) {
       window.ottOnline = new OnlineManager(window.ottGame);
-
-      // Chat handler
-      const chatInput  = document.getElementById('chatInput');
-      const btnSendChat = document.getElementById('btnSendChat');
-
-      if (chatInput && btnSendChat) {
-        const send = () => {
-          const text = chatInput.value.trim();
-          if (!text) return;
-          window.ottOnline._appendChat('[Bạn]', text);
-          window.ottOnline.sendChat(text);
-          chatInput.value = '';
-        };
-        btnSendChat.addEventListener('click', send);
-        chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
-      }
     }
-  }, 150);
+  }, 100);
 });

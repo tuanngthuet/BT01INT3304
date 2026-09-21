@@ -8,13 +8,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <!-- Thư viện PlayHTML: real-time sync không cần backend (https://playhtml.fun) -->
-  <script type="module">
-    import { playhtml } from "https://unpkg.com/playhtml@latest/dist/index.js";
-    // Expose làm global để online.js (classic script) dùng được
-    window.playhtml = playhtml;
-    window.dispatchEvent(new Event('playhtml-ready'));
-  </script>
+  <!-- Thư viện PlayHTML & PeerJS & Socket.IO cho phép Server đồng bộ nhiều người chơi -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="https://unpkg.com/playhtml"></script>
   <style>
     .server-banner {
       grid-column: 1 / -1;
@@ -56,57 +53,6 @@
       display: flex;
       gap: 12px;
       align-items: center;
-    }
-
-    /* ── Lobby room list ── */
-    #lobbyRoomList {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      max-height: 260px;
-      overflow-y: auto;
-      margin-top: 10px;
-    }
-    .lobby-room-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 10px;
-      padding: 10px 14px;
-      gap: 12px;
-    }
-    .lobby-room-info {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-    .lobby-room-code {
-      font-weight: 700;
-      font-size: 0.95rem;
-      color: #a5b4fc;
-    }
-    .lobby-room-host {
-      font-size: 0.78rem;
-      color: #94a3b8;
-    }
-    .lobby-room-status {
-      font-size: 0.75rem;
-      font-weight: 600;
-    }
-    .lobby-room-status.waiting { color: #34d399; }
-    .lobby-room-status.full    { color: #f87171; }
-    .lobby-empty {
-      text-align: center;
-      color: #64748b;
-      padding: 20px 0;
-      font-size: 0.9rem;
-    }
-    .btn-join-lobby {
-      white-space: nowrap;
-      padding: 6px 14px;
-      font-size: 0.85rem;
     }
   </style>
 </head>
@@ -325,7 +271,7 @@
   <div class="modal-backdrop show" id="onlineModal">
     <div class="modal-card">
       <div class="modal-header">
-        <h2>🌐 Kết Nối Phòng Chơi (playfull.html)</h2>
+        <h2>🌐 Kết Nối Phòng Chơi Server (playfull.html)</h2>
         <button class="btn-close" id="btnCloseOnline">&times;</button>
       </div>
       <div class="modal-body">
@@ -335,8 +281,7 @@
 
         <div class="online-tabs">
           <button class="tab-btn active" id="tabCreateRoom">Tạo phòng mới</button>
-          <button class="tab-btn" id="tabJoinRoom">Nhập mã phòng</button>
-          <button class="tab-btn" id="tabLobby">🏟️ Danh sách phòng</button>
+          <button class="tab-btn" id="tabJoinRoom">Vào phòng có sẵn</button>
         </div>
 
         <div class="tab-content" id="createRoomContent">
@@ -361,15 +306,6 @@
           </div>
           <div class="connection-status" id="joinStatus"></div>
         </div>
-
-        <div class="tab-content" id="lobbyContent" style="display:none;">
-          <p style="margin-bottom: 4px; color: #94a3b8; font-size: 0.85rem;">
-            Danh sách phòng đang chờ người chơi — cập nhật realtime:
-          </p>
-          <div id="lobbyRoomList">
-            <div class="lobby-empty">⏳ Đang tải danh sách phòng...</div>
-          </div>
-        </div>
       </div>
     </div>
   </div>
@@ -390,16 +326,40 @@
   <script src="game.js"></script>
   <script src="online.js"></script>
   <script>
-    // UI bổ sung cho playfull.html: nút đổi phòng và ghép trận nhanh
+    // Bổ sung các tính năng riêng cho playfull.html (Chat trong phòng, cập nhật UI Lobby)
     window.addEventListener('DOMContentLoaded', () => {
       document.getElementById('btnOpenRooms').addEventListener('click', () => {
         document.getElementById('onlineModal').classList.add('show');
       });
 
       document.getElementById('btnQuickMatch').addEventListener('click', () => {
-        document.getElementById('onlineModal').classList.add('show');
-        // Mở thẳng tab Lobby để xem phòng có sẵn
-        document.getElementById('tabLobby')?.click();
+        document.getElementById('btnDoCreateRoom').click();
+      });
+
+      // Xử lý gửi tin nhắn chat
+      const chatInput = document.getElementById('chatInput');
+      const btnSendChat = document.getElementById('btnSendChat');
+      const chatList = document.getElementById('chatList');
+
+      function sendChatMessage() {
+        const text = chatInput.value.trim();
+        if (!text) return;
+        const msgElem = document.createElement('div');
+        msgElem.className = 'history-entry';
+        msgElem.textContent = `[Bạn]: ${text}`;
+        chatList.appendChild(msgElem);
+        chatInput.value = '';
+        chatList.scrollTop = chatList.scrollHeight;
+
+        // Nếu có kết nối P2P thì gửi sang đối thủ
+        if (window.ottOnline && window.ottOnline.conn && window.ottOnline.conn.open) {
+          window.ottOnline.conn.send({ type: 'chat', text });
+        }
+      }
+
+      btnSendChat.addEventListener('click', sendChatMessage);
+      chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') sendChatMessage();
       });
     });
   </script>

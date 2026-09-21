@@ -1,16 +1,16 @@
 {
-  "name": "ottv2-game",
-  "version": "2.0.0",
-  "description": "Oẳn Tù Tì v2 - Multiplayer board game, deployed on Vercel with playhtml sync",
+  "name": "ottv2-game-server",
+  "version": "1.0.0",
+  "description": "Máy chủ Oẳn Tù Tì v2 (OTTv2) - Hỗ trợ nhiều người chơi trực tuyến qua Socket.IO",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "start": "node server.js"
   },
-  "keywords": ["game", "ottv2", "rock-paper-scissors", "multiplayer", "playhtml"],
+  "keywords": ["game", "ottv2", "rock-paper-scissors", "multiplayer", "socket.io"],
   "author": "Nhóm 4 Sinh Viên",
   "license": "MIT",
   "dependencies": {
-    "express": "4.19.2"
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
   }
 }
