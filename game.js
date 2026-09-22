@@ -121,8 +121,7 @@ class OTTGame {
     this.render();
     this.startTimer();
   }
-
-  /**
+/**
    * Khởi tạo quân cờ ban đầu trên bàn cờ 9x9:
    * Cột được đánh dấu từ a -> i (index 0 -> 8)
    * Hàng được đánh dấu từ 1 -> 9 (index 0 -> 8)
@@ -136,7 +135,7 @@ class OTTGame {
     this.gameOver = false;
     this.lastMove = null;
 
-    // Hàm tiện ích: Đặt quân cờ dựa trên tọa độ chuỗi (vd: '6c' hoặc 'c6')
+    // Hàm tiện ích: Đặt quân cờ dựa trên tọa độ chuỗi (vd: '4b' hoặc 'b4')
     const placePiece = (player, type, pos) => {
       const colStr = pos.match(/[a-i]/i)[0].toLowerCase();
       const rowStr = pos.match(/[1-9]/)[0];
@@ -148,17 +147,17 @@ class OTTGame {
     };
 
     // ==========================================
-    // THIẾT LẬP QUÂN CHO PLAYER 1 
+    // THIẾT LẬP QUÂN CHO PLAYER 1 (Lùi về 1 ô)
     // ==========================================
 
     // 1. 3 quân Kéo (SCISSORS)
-    ['6c', '5d', '4e'].forEach(pos => placePiece(1, 'SCISSORS', pos));
+    ['5c', '4d', '3e'].forEach(pos => placePiece(1, 'SCISSORS', pos));
 
-    // 2. 4 quân Giấy/Bao (PAPER) 
-    ['6b', '5c', '4d', '3e'].forEach(pos => placePiece(1, 'PAPER', pos));
+    // 2. 4 quân Giấy/Bao (PAPER)
+    ['5b', '4c', '3d', '2e'].forEach(pos => placePiece(1, 'PAPER', pos));
 
     // 3. 3 quân Đá/Đấm (ROCK)
-    ['5b', '4c', '3d'].forEach(pos => placePiece(1, 'ROCK', pos));
+    ['4b', '3c', '2d'].forEach(pos => placePiece(1, 'ROCK', pos));
 
 
     // ==========================================
@@ -166,14 +165,14 @@ class OTTGame {
     // (Đối xứng với P1 qua đường chéo 9a -> 1i)
     // ==========================================
 
-    // 1. 3 quân Kéo (SCISSORS) - Đối xứng với (6c, 5d, 4e)
-    ['7d', '6e', '5f'].forEach(pos => placePiece(2, 'SCISSORS', pos));
+    // 1. 3 quân Kéo (SCISSORS) - Đối xứng với (5c, 4d, 3e)
+    ['7e', '6f', '5g'].forEach(pos => placePiece(2, 'SCISSORS', pos));
 
-    // 2. 4 quân Giấy/Bao (PAPER) - Đối xứng với (6b, 5c, 4d, 3e)
-    ['8d', '7e', '6f', '5g'].forEach(pos => placePiece(2, 'PAPER', pos));
+    // 2. 4 quân Giấy/Bao (PAPER) - Đối xứng với (5b, 4c, 3d, 2e)
+    ['8e', '7f', '6g', '5h'].forEach(pos => placePiece(2, 'PAPER', pos));
 
-    // 3. 3 quân Đá/Đấm (ROCK) - Đối xứng với (5b, 4c, 3d)
-    ['8e', '7f', '6g'].forEach(pos => placePiece(2, 'ROCK', pos));
+    // 3. 3 quân Đá/Đấm (ROCK) - Đối xứng với (4b, 3c, 2d)
+    ['8f', '7g', '6h'].forEach(pos => placePiece(2, 'ROCK', pos));
   }
   bindEvents() {
     // Nút chế độ chơi
