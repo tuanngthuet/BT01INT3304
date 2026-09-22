@@ -1,16 +1,19 @@
 {
-  "name": "ottv2-game-server",
-  "version": "1.0.0",
-  "description": "Máy chủ Oẳn Tù Tì v2 (OTTv2) - Hỗ trợ nhiều người chơi trực tuyến qua Socket.IO",
+  "name": "ottv2-game",
+  "version": "2.0.0",
+  "description": "Trò chơi Oẳn Tù Tì v2 (OTTv2) 9x9 Chiến Thuật - Hỗ trợ nhiều người chơi trực tuyến qua playhtml",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "serve:py": "python -m http.server 3000"
   },
-  "keywords": ["game", "ottv2", "rock-paper-scissors", "multiplayer", "socket.io"],
+  "keywords": [
+    "game",
+    "ottv2",
+    "rock-paper-scissors",
+    "multiplayer",
+    "playhtml"
+  ],
   "author": "Nhóm 4 Sinh Viên",
-  "license": "MIT",
-  "dependencies": {
-    "express": "^4.19.2",
-    "socket.io": "^4.7.5"
-  }
+  "license": "MIT"
 }

@@ -8,10 +8,6 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <!-- Thư viện PlayHTML & PeerJS & Socket.IO cho phép Server đồng bộ nhiều người chơi -->
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <script src="https://unpkg.com/playhtml"></script>
   <style>
     .server-banner {
       grid-column: 1 / -1;
@@ -57,12 +53,15 @@
   </style>
 </head>
 <body>
+  <!-- Container đồng bộ dữ liệu thời gian thực qua playhtml -->
+  <div id="ottGameSync" can-play style="display: none;"></div>
+
   <div class="app-container">
-    <!-- Server Status Banner (Yêu cầu Bài 2) -->
+    <!-- Server Status Banner -->
     <div class="server-banner">
       <div>
-        <span class="server-badge">SERVER LIVE</span>
-        <strong style="margin-left: 10px;">playfull.html Server Hub</strong>: Đồng bộ nhiều phòng chơi cùng lúc qua Socket.IO / WebRTC PeerJS
+        <span class="server-badge">PLAYHTML LIVE</span>
+        <strong style="margin-left: 10px;">playfull.html Hub</strong>: Đồng bộ nhiều phòng chơi cùng lúc qua playhtml
       </div>
       <div class="lobby-bar">
         <button id="btnQuickMatch" class="btn-primary">⚡ Ghép trận nhanh</button>
@@ -267,16 +266,16 @@
     </div>
   </div>
 
-  <!-- MODAL: Chơi Online Nhiều Người (Server / P2P Room) -->
+  <!-- MODAL: Chơi Online Nhiều Người (playhtml Room) -->
   <div class="modal-backdrop show" id="onlineModal">
     <div class="modal-card">
       <div class="modal-header">
-        <h2>🌐 Kết Nối Phòng Chơi Server (playfull.html)</h2>
+        <h2>🌐 Kết Nối Phòng Chơi playhtml (playfull.html)</h2>
         <button class="btn-close" id="btnCloseOnline">&times;</button>
       </div>
       <div class="modal-body">
         <p class="online-desc">
-          Chọn tạo phòng mới hoặc tham gia phòng thi đấu có sẵn qua mạng.
+          Chọn tạo phòng mới hoặc tham gia phòng thi đấu có sẵn qua mạng đồng bộ bởi <strong>playhtml</strong>.
         </p>
 
         <div class="online-tabs">
@@ -293,13 +292,13 @@
               <input type="text" id="createdRoomCode" readonly />
               <button id="btnCopyCode" class="btn-secondary">Sao chép</button>
             </div>
-            <p class="share-hint">Gửi mã này cho bạn bè hoặc mở 1 tab trình duyệt khác để chơi cùng!</p>
-            <div class="connection-status" id="createStatus">⏳ Đang đợi đối thủ kết nối...</div>
+            <p class="share-hint">Gửi link này cho bạn bè hoặc mở 1 tab trình duyệt khác để chơi cùng!</p>
+            <div class="connection-status" id="createStatus">⏳ Đang đợi kết nối phòng...</div>
           </div>
         </div>
 
         <div class="tab-content" id="joinRoomContent" style="display:none;">
-          <label for="inputJoinCode">Nhập mã phòng:</label>
+          <label for="inputJoinCode">Nhập mã phòng hoặc link:</label>
           <div class="join-input-group">
             <input type="text" id="inputJoinCode" placeholder="Ví dụ: ott-5678" />
             <button id="btnDoJoinRoom" class="btn-primary">Tham gia ⚔️</button>
@@ -324,7 +323,7 @@
 
   <!-- Nhúng game engine & multiplayer controller -->
   <script src="game.js"></script>
-  <script src="online.js"></script>
+  <script type="module" src="online.js"></script>
   <script>
     // Bổ sung các tính năng riêng cho playfull.html (Chat trong phòng, cập nhật UI Lobby)
     window.addEventListener('DOMContentLoaded', () => {
@@ -336,24 +335,17 @@
         document.getElementById('btnDoCreateRoom').click();
       });
 
-      // Xử lý gửi tin nhắn chat
+      // Xử lý gửi tin nhắn chat qua playhtml
       const chatInput = document.getElementById('chatInput');
       const btnSendChat = document.getElementById('btnSendChat');
-      const chatList = document.getElementById('chatList');
 
       function sendChatMessage() {
         const text = chatInput.value.trim();
         if (!text) return;
-        const msgElem = document.createElement('div');
-        msgElem.className = 'history-entry';
-        msgElem.textContent = `[Bạn]: ${text}`;
-        chatList.appendChild(msgElem);
         chatInput.value = '';
-        chatList.scrollTop = chatList.scrollHeight;
 
-        // Nếu có kết nối P2P thì gửi sang đối thủ
-        if (window.ottOnline && window.ottOnline.conn && window.ottOnline.conn.open) {
-          window.ottOnline.conn.send({ type: 'chat', text });
+        if (window.ottOnline) {
+          window.ottOnline.sendChatMessage(text);
         }
       }
 

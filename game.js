@@ -106,9 +106,10 @@ class OTTGame {
     this.validMoves = []; // Array of { col, row, isCapture }
     this.history = [];
     this.gameOver = false;
-    this.mode = 'local'; // 'local' | 'ai' | 'online'
+    this.mode = 'local'; // 'local' | 'online'
     this.sounds = new SoundController();
-    this.timerSeconds = 30;
+    this.p1Time = 240;
+    this.p2Time = 240;
     this.timerInterval = null;
     this.lastMove = null; // { from: {col, row}, to: {col, row} }
 
@@ -123,10 +124,8 @@ class OTTGame {
 
   /**
    * Khởi tạo quân cờ ban đầu trên bàn cờ 9x9:
-   * Hàng 2 (row index 1): 9 quân của Người chơi 1 (3 Đấm, 3 Lá, 3 Kéo xen kẽ đối xứng)
-   * Hàng 8 (row index 7): 9 quân của Người chơi 2 (3 Đấm, 3 Lá, 3 Kéo)
-   * Ô a1 (0, 0): Căn cứ mục tiêu của P1 (đối thủ P2 cần xâm nhập để thắng)
-   * Ô i9 (8, 8): Căn cứ mục tiêu của P2 (đối thủ P1 cần xâm nhập để thắng)
+   * Cột được đánh dấu từ a -> i (index 0 -> 8)
+   * Hàng được đánh dấu từ 1 -> 9 (index 0 -> 8)
    */
   initBoard() {
     this.board = Array(9).fill(null).map(() => Array(9).fill(null));
@@ -137,40 +136,52 @@ class OTTGame {
     this.gameOver = false;
     this.lastMove = null;
 
-    const p1Pattern = [
-      'ROCK', 'PAPER', 'SCISSORS',
-      'ROCK', 'PAPER', 'SCISSORS',
-      'ROCK', 'PAPER', 'SCISSORS'
-    ];
+    // Hàm tiện ích: Đặt quân cờ dựa trên tọa độ chuỗi (vd: '4b' hoặc 'b4')
+    const placePiece = (player, type, pos) => {
+      const colStr = pos.match(/[a-i]/i)[0].toLowerCase();
+      const rowStr = pos.match(/[1-9]/)[0];
+      
+      const col = colStr.charCodeAt(0) - 'a'.charCodeAt(0);
+      const row = parseInt(rowStr) - 1;
+      
+      this.board[row][col] = { player, type };
+    };
 
-    const p2Pattern = [
-      'SCISSORS', 'PAPER', 'ROCK',
-      'SCISSORS', 'PAPER', 'ROCK',
-      'SCISSORS', 'PAPER', 'ROCK'
-    ];
+    // ==========================================
+    // THIẾT LẬP QUÂN CHO PLAYER 1 (Lùi về 1 ô)
+    // ==========================================
 
-    // Xếp quân Player 1 ở hàng 2 (index 1)
-    for (let c = 0; c < 9; c++) {
-      this.board[1][c] = {
-        player: 1,
-        type: p1Pattern[c]
-      };
-    }
+    // 1. 3 quân Kéo (SCISSORS)
+    ['5c', '4d', '3e'].forEach(pos => placePiece(1, 'SCISSORS', pos));
 
-    // Xếp quân Player 2 ở hàng 8 (index 7)
-    for (let c = 0; c < 9; c++) {
-      this.board[7][c] = {
-        player: 2,
-        type: p2Pattern[c]
-      };
-    }
+    // 2. 4 quân Giấy/Bao (PAPER)
+    ['5b', '4c', '3d', '2e'].forEach(pos => placePiece(1, 'PAPER', pos));
+
+    // 3. 3 quân Đá/Đấm (ROCK)
+    ['4b', '3c', '2d'].forEach(pos => placePiece(1, 'ROCK', pos));
+
+
+    // ==========================================
+    // THIẾT LẬP QUÂN CHO PLAYER 2
+    // (Đối xứng với P1 qua đường chéo 9a -> 1i)
+    // ==========================================
+
+    // 1. 3 quân Kéo (SCISSORS) - Đối xứng với (5c, 4d, 3e)
+    ['7e', '6f', '5g'].forEach(pos => placePiece(2, 'SCISSORS', pos));
+
+    // 2. 4 quân Giấy/Bao (PAPER) - Đối xứng với (5b, 4c, 3d, 2e)
+    ['8e', '7f', '6g', '5h'].forEach(pos => placePiece(2, 'PAPER', pos));
+
+    // 3. 3 quân Đá/Đấm (ROCK) - Đối xứng với (4b, 3c, 2d)
+    ['8f', '7g', '6h'].forEach(pos => placePiece(2, 'ROCK', pos));
   }
 
   bindEvents() {
-    // Nút chế độ chơi
-    document.getElementById('btnModeLocal').addEventListener('click', () => this.setMode('local'));
-    document.getElementById('btnModeAI').addEventListener('click', () => this.setMode('ai'));
-    document.getElementById('btnModeOnline').addEventListener('click', () => this.setMode('online'));
+    // Nút chế độ chơi (Local hoặc Online)
+    const btnLocal = document.getElementById('btnModeLocal');
+    if (btnLocal) btnLocal.addEventListener('click', () => this.setMode('local'));
+    const btnOnline = document.getElementById('btnModeOnline');
+    if (btnOnline) btnOnline.addEventListener('click', () => this.setMode('online'));
 
     // Tiện ích
     document.getElementById('btnRestart').addEventListener('click', () => this.restart());
@@ -195,27 +206,37 @@ class OTTGame {
 
   setMode(newMode) {
     if (newMode === 'online') {
-      document.getElementById('onlineModal').classList.add('show');
+      const modal = document.getElementById('onlineModal');
+      if (modal) modal.classList.add('show');
     }
     this.mode = newMode;
     document.querySelectorAll('.btn-mode').forEach(b => b.classList.remove('active'));
-    if (newMode === 'local') document.getElementById('btnModeLocal').classList.add('active');
-    if (newMode === 'ai') document.getElementById('btnModeAI').classList.add('active');
-    if (newMode === 'online') document.getElementById('btnModeOnline').classList.add('active');
+    const btnLocal = document.getElementById('btnModeLocal');
+    const btnOnline = document.getElementById('btnModeOnline');
+    if (newMode === 'local' && btnLocal) btnLocal.classList.add('active');
+    if (newMode === 'online' && btnOnline) btnOnline.classList.add('active');
     this.restart();
   }
 
   restart() {
     clearInterval(this.timerInterval);
+    
+    this.p1Time = 240;
+    this.p2Time = 240;
     this.initBoard();
     this.render();
     this.startTimer();
     this.updateStatusSummary('Ván đấu mới đã bắt đầu!');
   }
 
+  formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  }
+
   startTimer() {
     clearInterval(this.timerInterval);
-    this.timerSeconds = 30;
     this.updateTimerDisplay();
 
     this.timerInterval = setInterval(() => {
@@ -223,21 +244,44 @@ class OTTGame {
         clearInterval(this.timerInterval);
         return;
       }
-      this.timerSeconds--;
-      this.updateTimerDisplay();
 
-      if (this.timerSeconds <= 0) {
-        // Hết giờ lượt đi: Chuyển lượt hoặc xử thua
-        this.switchTurn(true);
+      if (this.currentTurn === 1) {
+        this.p1Time--;
+        if (this.p1Time <= 0) {
+          this.p1Time = 0;
+          this.updateTimerDisplay();
+          this.endGame(2, 'Người chơi 1 (Xanh) đã hết thời gian!');
+          return;
+        }
+      } else {
+        this.p2Time--;
+        if (this.p2Time <= 0) {
+          this.p2Time = 0;
+          this.updateTimerDisplay();
+          this.endGame(1, 'Người chơi 2 (Đỏ) đã hết thời gian!');
+          return;
+        }
       }
+
+      this.updateTimerDisplay();
     }, 1000);
   }
 
   updateTimerDisplay() {
     const timerElem = document.getElementById('turnTimer');
+    const p1TimerElem = document.getElementById('p1Timer');
+    const p2TimerElem = document.getElementById('p2Timer');
+
+    const p1Str = this.formatTime(this.p1Time);
+    const p2Str = this.formatTime(this.p2Time);
+
+    if (p1TimerElem) p1TimerElem.textContent = p1Str;
+    if (p2TimerElem) p2TimerElem.textContent = p2Str;
+
     if (timerElem) {
-      timerElem.textContent = `${this.timerSeconds}s`;
-      if (this.timerSeconds <= 5) {
+      timerElem.textContent = `P1: ${p1Str} | P2: ${p2Str}`;
+      const activeTime = this.currentTurn === 1 ? this.p1Time : this.p2Time;
+      if (activeTime <= 30) {
         timerElem.style.color = '#ef4444';
       } else {
         timerElem.style.color = '#f0f6fc';
@@ -245,23 +289,11 @@ class OTTGame {
     }
   }
 
-  /**
-   * Kiểm tra khả năng ăn quân theo chuẩn luật Oẳn tù tì:
-   * - Đấm ăn Kéo
-   * - Kéo ăn Lá
-   * - Lá ăn Đấm
-   * - Cùng loại: đứng chặn đường, KHÔNG ăn được (return false)
-   * - Yếu hơn: KHÔNG ăn được (return false)
-   */
   canCapture(attackerType, defenderType) {
     if (attackerType === defenderType) return false;
     return PIECE_TYPES[attackerType].beats === defenderType;
   }
 
-  /**
-   * Tính các nước đi hợp lệ cho quân ở (col, row):
-   * Đi 1 ô theo 8 hướng (như quân Vua trong cờ vua)
-   */
   getValidMovesForPiece(col, row) {
     const piece = this.board[row][col];
     if (!piece) return [];
@@ -271,37 +303,26 @@ class OTTGame {
       const tc = col + dc;
       const tr = row + dr;
 
-      // Nằm trong bàn cờ 9x9
       if (tc >= 0 && tc < 9 && tr >= 0 && tr < 9) {
         const target = this.board[tr][tc];
 
         if (!target) {
-          // Ô trống: Luôn đi được
           moves.push({ col: tc, row: tr, isCapture: false });
         } else if (target.player !== piece.player) {
-          // Ô có quân đối phương: Áp dụng luật ăn quân Oẳn tù tì
           if (this.canCapture(piece.type, target.type)) {
             moves.push({ col: tc, row: tr, isCapture: true });
           }
-          // Chú ý: Nếu cùng loại quân hoặc yếu hơn -> bị chặn (không thể đi vào)
         }
       }
     }
     return moves;
   }
 
-  /**
-   * Xử lý khi người chơi bấm vào 1 ô trên bàn cờ
-   */
   handleCellClick(col, row) {
     if (this.gameOver) return;
 
-    // Trong chế độ AI, nếu đang là lượt của máy (Player 2) thì người chơi không thể bấm
-    if (this.mode === 'ai' && this.currentTurn === 2) return;
-
     const clickedPiece = this.board[row][col];
 
-    // Nếu đã chọn 1 quân trước đó và bấm vào ô hợp lệ để di chuyển
     if (this.selectedCell) {
       const isTargetMove = this.validMoves.find(m => m.col === col && m.row === row);
       if (isTargetMove) {
@@ -310,7 +331,6 @@ class OTTGame {
       }
     }
 
-    // Chọn quân cờ của phe hiện tại
     if (clickedPiece && clickedPiece.player === this.currentTurn) {
       this.selectedCell = { col, row };
       this.validMoves = this.getValidMovesForPiece(col, row);
@@ -318,15 +338,11 @@ class OTTGame {
       return;
     }
 
-    // Bấm ra ngoài ô hợp lệ -> Hủy chọn
     this.selectedCell = null;
     this.validMoves = [];
     this.render();
   }
 
-  /**
-   * Thực hiện nước đi từ (fromCol, fromRow) tới (toCol, toRow)
-   */
   executeMove(fromCol, fromRow, toCol, toRow, isRemote = false) {
     const piece = this.board[fromRow][fromCol];
     const target = this.board[toRow][toCol];
@@ -334,7 +350,6 @@ class OTTGame {
 
     const isCapture = !!target;
 
-    // Lưu lại lịch sử để hỗ trợ Undo
     this.history.push({
       from: { col: fromCol, row: fromRow },
       to: { col: toCol, row: toRow },
@@ -343,73 +358,45 @@ class OTTGame {
       turn: this.currentTurn
     });
 
-    // Cập nhật vị trí trên bàn cờ
     this.board[toRow][toCol] = piece;
     this.board[fromRow][fromCol] = null;
     this.lastMove = { from: { col: fromCol, row: fromRow }, to: { col: toCol, row: toRow } };
     this.selectedCell = null;
     this.validMoves = [];
 
-    // Âm thanh
     if (isCapture) {
       this.sounds.playCapture();
     } else {
       this.sounds.playMove();
     }
 
-    // Ghi log nước đi
     this.logMove(piece, fromCol, fromRow, toCol, toRow, target);
 
-    // Gửi nước đi sang máy khác nếu đang chơi Online
     if (!isRemote && this.onMoveCallback) {
       this.onMoveCallback({ fromCol, fromRow, toCol, toRow });
     }
 
-    // Kiểm tra điều kiện thắng
     const winResult = this.checkWinCondition(toCol, toRow, piece);
     if (winResult.won) {
       this.endGame(winResult.winner, winResult.reason);
       return;
     }
 
-    // Chuyển lượt
     this.switchTurn();
-
-    // Nếu chơi với AI và đến lượt AI
-    if (!this.gameOver && this.mode === 'ai' && this.currentTurn === 2) {
-      setTimeout(() => this.makeAIMove(), 500);
-    }
   }
 
-  switchTurn(isTimeout = false) {
+  switchTurn() {
     this.currentTurn = this.currentTurn === 1 ? 2 : 1;
     this.startTimer();
     this.render();
-
-    if (isTimeout) {
-      this.updateStatusSummary(`Hết thời gian! Lượt đi chuyển sang ${this.getTurnName(this.currentTurn)}.`);
-    } else {
-      this.updateStatusSummary(`Lượt của ${this.getTurnName(this.currentTurn)}.`);
-    }
+    this.updateStatusSummary(`Lượt của ${this.getTurnName(this.currentTurn)}.`);
   }
 
   getTurnName(player) {
     return player === 1 ? 'Người chơi 1 (Xanh)' : 'Người chơi 2 (Đỏ)';
   }
 
-  /**
-   * KIỂM TRA ĐIỀU KIỆN THẮNG THEO ĐÚNG ĐỀ BÀI:
-   * 1. Đưa quân vào ô a1 / i9:
-   *    - P1 đưa quân vào ô i9 (Căn cứ P2) -> P1 THẮNG!
-   *    - P2 đưa quân vào ô a1 (Căn cứ P1) -> P2 THẮNG!
-   * 2. Ăn hết sạch hoàn toàn 1 loại quân của đối phương:
-   *    - P2 hết sạch Đấm hoặc Lá hoặc Kéo -> P1 THẮNG!
-   *    - P1 hết sạch Đấm hoặc Lá hoặc Kéo -> P2 THẮNG!
-   */
   checkWinCondition(toCol, toRow, movedPiece) {
-    // 1. Kiểm tra chiếm căn cứ mục tiêu
-    // Ô a1 có tọa độ col: 0, row: 0
-    // Ô i9 có tọa độ col: 8, row: 8
     if (movedPiece.player === 1 && toCol === 8 && toRow === 8) {
       return {
         won: true,
@@ -426,7 +413,6 @@ class OTTGame {
       };
     }
 
-    // 2. Đếm số lượng quân của mỗi loại cho 2 người chơi
     const counts = {
       1: { ROCK: 0, PAPER: 0, SCISSORS: 0 },
       2: { ROCK: 0, PAPER: 0, SCISSORS: 0 }
@@ -441,7 +427,6 @@ class OTTGame {
       }
     }
 
-    // Kiểm tra P2 có bị diệt sạch 1 loại quân nào không
     for (const [type, count] of Object.entries(counts[2])) {
       if (count === 0) {
         return {
@@ -452,7 +437,6 @@ class OTTGame {
       }
     }
 
-    // Kiểm tra P1 có bị diệt sạch 1 loại quân nào không
     for (const [type, count] of Object.entries(counts[1])) {
       if (count === 0) {
         return {
@@ -533,128 +517,15 @@ class OTTGame {
     this.validMoves = [];
     this.lastMove = null;
 
-    // Nếu đấu với AI và lùi lại, nên lùi luôn 2 nước để về lại lượt người chơi
-    if (this.mode === 'ai' && this.history.length > 0 && last.turn === 2) {
-      const prev = this.history.pop();
-      this.board[prev.from.row][prev.from.col] = prev.piece;
-      this.board[prev.to.row][prev.to.col] = prev.captured;
-      this.currentTurn = 1;
-    }
-
     this.startTimer();
     this.render();
   }
 
-  /**
-   * Trí tuệ nhân tạo (AI Bot - Player 2)
-   */
-  makeAIMove() {
-    if (this.gameOver || this.currentTurn !== 2) return;
-
-    // Tìm tất cả các nước đi có thể của Player 2
-    const allMoves = [];
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        const piece = this.board[r][c];
-        if (piece && piece.player === 2) {
-          const moves = this.getValidMovesForPiece(c, r);
-          for (const m of moves) {
-            allMoves.push({
-              fromCol: c,
-              fromRow: r,
-              toCol: m.col,
-              toRow: m.row,
-              isCapture: m.isCapture,
-              piece: piece
-            });
-          }
-        }
-      }
-    }
-
-    if (allMoves.length === 0) {
-      this.endGame(1, 'Người chơi 2 (AI) không còn nước đi hợp lệ!');
-      return;
-    }
-
-    // Đánh giá điểm chiến thuật cho mỗi nước đi
-    let bestMove = null;
-    let maxScore = -999999;
-
-    for (const move of allMoves) {
-      let score = 0;
-
-      // 1. Chiếm ô căn cứ a1 (0, 0): Thắng ngay lập tức!
-      if (move.toCol === 0 && move.toRow === 0) {
-        score += 100000;
-      }
-
-      // 2. Ăn quân đối phương
-      if (move.isCapture) {
-        score += 120;
-        const targetPiece = this.board[move.toRow][move.toCol];
-        // Đếm xem đối phương còn bao nhiêu quân loại này
-        let remain = 0;
-        for (let r = 0; r < 9; r++) {
-          for (let c = 0; c < 9; c++) {
-            const p = this.board[r][c];
-            if (p && p.player === 1 && p.type === targetPiece.type) {
-              remain++;
-            }
-          }
-        }
-        // Nếu đây là quân cuối cùng của loại đó -> Thắng ngay!
-        if (remain === 1) {
-          score += 50000;
-        }
-      }
-
-      // 3. Tiến gần về căn cứ a1 (0, 0)
-      const currentDist = Math.hypot(move.fromCol - 0, move.fromRow - 0);
-      const newDist = Math.hypot(move.toCol - 0, move.toRow - 0);
-      score += (currentDist - newDist) * 15;
-
-      // 4. Tránh bị ăn ở lượt tiếp theo
-      // Kiểm tra sơ bộ xem ô đích có đang bị quân P1 đe dọa không
-      let inDanger = false;
-      for (const [dc, dr] of DIRECTIONS) {
-        const nc = move.toCol + dc;
-        const nr = move.toRow + dr;
-        if (nc >= 0 && nc < 9 && nr >= 0 && nr < 9) {
-          const enemy = this.board[nr][nc];
-          if (enemy && enemy.player === 1 && this.canCapture(enemy.type, move.piece.type)) {
-            inDanger = true;
-            break;
-          }
-        }
-      }
-      if (inDanger) {
-        score -= 80;
-      }
-
-      // Thêm chút ngẫu nhiên nhỏ để các trận đấu không bị rập khuôn
-      score += Math.random() * 5;
-
-      if (score > maxScore) {
-        maxScore = score;
-        bestMove = move;
-      }
-    }
-
-    if (bestMove) {
-      this.executeMove(bestMove.fromCol, bestMove.fromRow, bestMove.toCol, bestMove.toRow);
-    }
-  }
-
-  /**
-   * RENDER BÀN CỜ VÀ GIAO DIỆN
-   */
   render() {
     const grid = document.getElementById('boardGrid');
     if (!grid) return;
     grid.innerHTML = '';
 
-    // Bàn cờ hiển thị từ hàng 9 xuống hàng 1 (row index 8 xuống 0)
     for (let r = 8; r >= 0; r--) {
       for (let c = 0; c < 9; c++) {
         const cell = document.createElement('div');
@@ -663,16 +534,13 @@ class OTTGame {
           cell.classList.add('alt-color');
         }
 
-        // Đánh dấu ô Căn Cứ Chiến Lược
         if (c === 0 && r === 0) cell.classList.add('base-p1'); // a1
         if (c === 8 && r === 8) cell.classList.add('base-p2'); // i9
 
-        // Highlight ô đang chọn
         if (this.selectedCell && this.selectedCell.col === c && this.selectedCell.row === r) {
           cell.classList.add('selected');
         }
 
-        // Highlight nước đi hợp lệ
         const validMove = this.validMoves.find(m => m.col === c && m.row === r);
         if (validMove) {
           if (validMove.isCapture) {
@@ -682,7 +550,6 @@ class OTTGame {
           }
         }
 
-        // Highlight nước đi trước
         if (this.lastMove) {
           if (this.lastMove.from.col === c && this.lastMove.from.row === r) {
             cell.classList.add('last-move-source');
@@ -692,7 +559,6 @@ class OTTGame {
           }
         }
 
-        // Vẽ quân cờ nếu có
         const pieceData = this.board[r][c];
         if (pieceData) {
           const pieceElem = document.createElement('div');
@@ -731,12 +597,15 @@ class OTTGame {
       if (p2Badge) p2Badge.classList.add('active');
       if (p1Badge) p1Badge.classList.remove('active');
       if (turnText) {
-        turnText.textContent = this.mode === 'ai' ? '🤖 Máy AI (Đỏ)' : 'Người chơi 2 (Đỏ)';
+        turnText.textContent = 'Người chơi 2 (Đỏ)';
         turnText.style.color = 'var(--p2-color)';
       }
     }
   }
 
+  // ==========================================
+  // ĐÃ SỬA: Hàm renderInventory mới (Fix lỗi 4/3 thành 4/4)
+  // ==========================================
   renderInventory() {
     const counts = {
       1: { ROCK: 0, PAPER: 0, SCISSORS: 0 },
@@ -752,24 +621,34 @@ class OTTGame {
       }
     }
 
-    const updateBadge = (elemId, count) => {
+    // Khai báo tổng số quân tối đa
+    const MAX_PIECES = {
+      ROCK: 3,
+      PAPER: 4, 
+      SCISSORS: 3
+    };
+
+    // Hàm update nhận thêm tham số maxCount
+    const updateBadge = (elemId, count, maxCount) => {
       const el = document.getElementById(elemId);
       if (!el) return;
       const numSpan = el.querySelector('.inv-num');
-      if (numSpan) numSpan.textContent = `${count}/3`;
+      // Gán linh hoạt theo maxCount thay vì /3 cứng
+      if (numSpan) numSpan.textContent = `${count}/${maxCount}`;
 
       el.classList.remove('danger', 'extinct');
       if (count === 1) el.classList.add('danger');
       if (count === 0) el.classList.add('extinct');
     };
 
-    updateBadge('p1RockCount', counts[1].ROCK);
-    updateBadge('p1PaperCount', counts[1].PAPER);
-    updateBadge('p1ScissorsCount', counts[1].SCISSORS);
+    // Truyền maxCount cho từng phe
+    updateBadge('p1RockCount', counts[1].ROCK, MAX_PIECES.ROCK);
+    updateBadge('p1PaperCount', counts[1].PAPER, MAX_PIECES.PAPER);
+    updateBadge('p1ScissorsCount', counts[1].SCISSORS, MAX_PIECES.SCISSORS);
 
-    updateBadge('p2RockCount', counts[2].ROCK);
-    updateBadge('p2PaperCount', counts[2].PAPER);
-    updateBadge('p2ScissorsCount', counts[2].SCISSORS);
+    updateBadge('p2RockCount', counts[2].ROCK, MAX_PIECES.ROCK);
+    updateBadge('p2PaperCount', counts[2].PAPER, MAX_PIECES.PAPER);
+    updateBadge('p2ScissorsCount', counts[2].SCISSORS, MAX_PIECES.SCISSORS);
   }
 }
 

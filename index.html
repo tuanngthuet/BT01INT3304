@@ -8,12 +8,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-  <!-- Thư viện hỗ trợ chơi mạng: Socket.io & PeerJS & playhtml CDN -->
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <script src="https://unpkg.com/playhtml"></script>
 </head>
 <body>
+  <!-- Container đồng bộ dữ liệu thời gian thực qua playhtml -->
+  <div id="ottGameSync" can-play style="display: none;"></div>
+
   <div class="app-container">
     <!-- Header -->
     <header class="game-header">
@@ -30,9 +29,6 @@
         <div class="mode-selector">
           <button id="btnModeLocal" class="btn-mode active" title="Chơi 2 người trên cùng một thiết bị">
             👥 2 Người (Local)
-          </button>
-          <button id="btnModeAI" class="btn-mode" title="Đấu với Máy thông minh">
-            🤖 Đấu với AI
           </button>
           <button id="btnModeOnline" class="btn-mode" title="Chơi qua mạng nhiều người cùng lúc">
             🌐 Chơi Online
@@ -163,7 +159,7 @@
           <div class="empty-history">Chưa có nước đi nào</div>
         </div>
         <div class="history-actions">
-          <button id="btnUndo" class="btn-secondary" title="Đi lại 1 nước (chỉ dùng cho Local/AI)">↩️ Đi lại</button>
+          <button id="btnUndo" class="btn-secondary" title="Đi lại 1 nước (chỉ dùng cho Local)">↩️ Đi lại</button>
         </div>
       </div>
 
@@ -236,16 +232,16 @@
     </div>
   </div>
 
-  <!-- MODAL: Chơi Online Nhiều Người (Server / P2P Room) -->
+  <!-- MODAL: Chơi Online Nhiều Người (playhtml) -->
   <div class="modal-backdrop" id="onlineModal">
     <div class="modal-card">
       <div class="modal-header">
-        <h2>🌐 Phòng Chơi Online Nhiều Người (Bài tập 2)</h2>
+        <h2>🌐 Phòng Chơi Trực Tuyến (playhtml)</h2>
         <button class="btn-close" id="btnCloseOnline">&times;</button>
       </div>
       <div class="modal-body">
         <p class="online-desc">
-          Hệ thống hỗ trợ chơi qua <strong>Server Socket.IO / WebRTC PeerJS</strong> cho phép nhiều người chơi cùng lúc trên nhiều máy tính/điện thoại khác nhau qua mạng.
+          Hệ thống phòng đấu trực tuyến thời gian thực sử dụng <strong>playhtml</strong> (PartyKit & Yjs CRDT). Kết nối tức thì mọi nơi, không cần cài đặt server.
         </p>
 
         <div class="online-tabs">
@@ -263,8 +259,8 @@
               <input type="text" id="createdRoomCode" readonly />
               <button id="btnCopyCode" class="btn-secondary">Sao chép</button>
             </div>
-            <p class="share-hint">Chia sẻ mã phòng này cho bạn bè để cùng chơi!</p>
-            <div class="connection-status" id="createStatus">⏳ Đang đợi đối thủ kết nối...</div>
+            <p class="share-hint">Chia sẻ mã phòng này hoặc gửi link cho bạn bè để cùng chơi!</p>
+            <div class="connection-status" id="createStatus">⏳ Đang đợi kết nối phòng...</div>
           </div>
         </div>
 
@@ -294,6 +290,6 @@
   </div>
 
   <script src="game.js"></script>
-  <script src="online.js"></script>
+  <script type="module" src="online.js"></script>
 </body>
 </html>
