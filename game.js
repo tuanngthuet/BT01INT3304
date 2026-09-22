@@ -108,7 +108,8 @@ class OTTGame {
     this.gameOver = false;
     this.mode = 'local'; // 'local' | 'ai' | 'online'
     this.sounds = new SoundController();
-    this.timerSeconds = 30;
+    this.p1Time = 240;
+    this.p2Time = 240;
     this.timerInterval = null;
     this.lastMove = null; // { from: {col, row}, to: {col, row} }
 
@@ -215,43 +216,73 @@ class OTTGame {
 
   restart() {
     clearInterval(this.timerInterval);
+    this.p1Time = 240;
+    this.p2Time = 240;
     this.initBoard();
     this.render();
     this.startTimer();
     this.updateStatusSummary('Ván đấu mới đã bắt đầu!');
   }
 
-  startTimer() {
-    clearInterval(this.timerInterval);
-    this.timerSeconds = 30;
-    this.updateTimerDisplay();
+formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+}
 
-    this.timerInterval = setInterval(() => {
-      if (this.gameOver) {
-        clearInterval(this.timerInterval);
+startTimer() {
+  clearInterval(this.timerInterval);
+  this.updateTimerDisplay();
+
+  this.timerInterval = setInterval(() => {
+    if (this.gameOver) {
+      clearInterval(this.timerInterval);
+      return;
+    }
+
+    if (this.currentTurn === 1) {
+      this.p1Time--;
+      if (this.p1Time <= 0) {
+        this.p1Time = 0;
+        this.updateTimerDisplay();
+        this.endGame(2, 'Người chơi 1 (Xanh) đã hết thời gian!');
         return;
       }
-      this.timerSeconds--;
-      this.updateTimerDisplay();
-
-      if (this.timerSeconds <= 0) {
-        // Hết giờ lượt đi: Chuyển lượt hoặc xử thua
-        this.switchTurn(true);
-      }
-    }, 1000);
-  }
-
-  updateTimerDisplay() {
-    const timerElem = document.getElementById('turnTimer');
-    if (timerElem) {
-      timerElem.textContent = `${this.timerSeconds}s`;
-      if (this.timerSeconds <= 5) {
-        timerElem.style.color = '#ef4444';
-      } else {
-        timerElem.style.color = '#f0f6fc';
+    } else {
+      this.p2Time--;
+      if (this.p2Time <= 0) {
+        this.p2Time = 0;
+        this.updateTimerDisplay();
+        this.endGame(1, 'Người chơi 2 (Đỏ) đã hết thời gian!');
+        return;
       }
     }
+
+    this.updateTimerDisplay();
+  }, 1000);
+}
+
+updateTimerDisplay() {
+  const timerElem = document.getElementById('turnTimer');
+  const p1TimerElem = document.getElementById('p1Timer');
+  const p2TimerElem = document.getElementById('p2Timer');
+
+  const p1Str = this.formatTime(this.p1Time);
+  const p2Str = this.formatTime(this.p2Time);
+
+  if (p1TimerElem) p1TimerElem.textContent = p1Str;
+  if (p2TimerElem) p2TimerElem.textContent = p2Str;
+
+  if (timerElem) {
+    timerElem.textContent = `P1: ${p1Str} | P2: ${p2Str}`;
+    const activeTime = this.currentTurn === 1 ? this.p1Time : this.p2Time;
+    if (activeTime <= 30) {
+      timerElem.style.color = '#ef4444';
+    } else {
+      timerElem.style.color = '#f0f6fc';
+    }
   }
+}
 
   /**
    * Kiểm tra khả năng ăn quân theo chuẩn luật Oẳn tù tì:
@@ -389,17 +420,12 @@ class OTTGame {
     }
   }
 
-  switchTurn(isTimeout = false) {
-    this.currentTurn = this.currentTurn === 1 ? 2 : 1;
-    this.startTimer();
-    this.render();
-
-    if (isTimeout) {
-      this.updateStatusSummary(`Hết thời gian! Lượt đi chuyển sang ${this.getTurnName(this.currentTurn)}.`);
-    } else {
-      this.updateStatusSummary(`Lượt của ${this.getTurnName(this.currentTurn)}.`);
-    }
-  }
+switchTurn() {
+  this.currentTurn = this.currentTurn === 1 ? 2 : 1;
+  this.startTimer();
+  this.render();
+  this.updateStatusSummary(`Lượt của ${this.getTurnName(this.currentTurn)}.`);
+}
 
   getTurnName(player) {
     return player === 1 ? 'Người chơi 1 (Xanh)' : 'Người chơi 2 (Đỏ)';
