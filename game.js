@@ -123,10 +123,8 @@ class OTTGame {
 
   /**
    * Khởi tạo quân cờ ban đầu trên bàn cờ 9x9:
-   * Hàng 2 (row index 1): 9 quân của Người chơi 1 (3 Đấm, 3 Lá, 3 Kéo xen kẽ đối xứng)
-   * Hàng 8 (row index 7): 9 quân của Người chơi 2 (3 Đấm, 3 Lá, 3 Kéo)
-   * Ô a1 (0, 0): Căn cứ mục tiêu của P1 (đối thủ P2 cần xâm nhập để thắng)
-   * Ô i9 (8, 8): Căn cứ mục tiêu của P2 (đối thủ P1 cần xâm nhập để thắng)
+   * Cột được đánh dấu từ a -> i (index 0 -> 8)
+   * Hàng được đánh dấu từ 1 -> 9 (index 0 -> 8)
    */
   initBoard() {
     this.board = Array(9).fill(null).map(() => Array(9).fill(null));
@@ -137,35 +135,45 @@ class OTTGame {
     this.gameOver = false;
     this.lastMove = null;
 
-    const p1Pattern = [
-      'ROCK', 'PAPER', 'SCISSORS',
-      'ROCK', 'PAPER', 'SCISSORS',
-      'ROCK', 'PAPER', 'SCISSORS'
-    ];
+    // Hàm tiện ích: Đặt quân cờ dựa trên tọa độ chuỗi (vd: '6c' hoặc 'c6')
+    const placePiece = (player, type, pos) => {
+      const colStr = pos.match(/[a-i]/i)[0].toLowerCase();
+      const rowStr = pos.match(/[1-9]/)[0];
+      
+      const col = colStr.charCodeAt(0) - 'a'.charCodeAt(0);
+      const row = parseInt(rowStr) - 1;
+      
+      this.board[row][col] = { player, type };
+    };
 
-    const p2Pattern = [
-      'SCISSORS', 'PAPER', 'ROCK',
-      'SCISSORS', 'PAPER', 'ROCK',
-      'SCISSORS', 'PAPER', 'ROCK'
-    ];
+    // ==========================================
+    // THIẾT LẬP QUÂN CHO PLAYER 1 
+    // ==========================================
 
-    // Xếp quân Player 1 ở hàng 2 (index 1)
-    for (let c = 0; c < 9; c++) {
-      this.board[1][c] = {
-        player: 1,
-        type: p1Pattern[c]
-      };
-    }
+    // 1. 3 quân Kéo (SCISSORS)
+    ['6c', '5d', '4e'].forEach(pos => placePiece(1, 'SCISSORS', pos));
 
-    // Xếp quân Player 2 ở hàng 8 (index 7)
-    for (let c = 0; c < 9; c++) {
-      this.board[7][c] = {
-        player: 2,
-        type: p2Pattern[c]
-      };
-    }
+    // 2. 4 quân Giấy/Bao (PAPER) 
+    ['6b', '5c', '4d', '3e'].forEach(pos => placePiece(1, 'PAPER', pos));
+
+    // 3. 3 quân Đá/Đấm (ROCK)
+    ['5b', '4c', '3d'].forEach(pos => placePiece(1, 'ROCK', pos));
+
+
+    // ==========================================
+    // THIẾT LẬP QUÂN CHO PLAYER 2
+    // (Đối xứng với P1 qua đường chéo 9a -> 1i)
+    // ==========================================
+
+    // 1. 3 quân Kéo (SCISSORS) - Đối xứng với (6c, 5d, 4e)
+    ['7d', '6e', '5f'].forEach(pos => placePiece(2, 'SCISSORS', pos));
+
+    // 2. 4 quân Giấy/Bao (PAPER) - Đối xứng với (6b, 5c, 4d, 3e)
+    ['8d', '7e', '6f', '5g'].forEach(pos => placePiece(2, 'PAPER', pos));
+
+    // 3. 3 quân Đá/Đấm (ROCK) - Đối xứng với (5b, 4c, 3d)
+    ['8e', '7f', '6g'].forEach(pos => placePiece(2, 'ROCK', pos));
   }
-
   bindEvents() {
     // Nút chế độ chơi
     document.getElementById('btnModeLocal').addEventListener('click', () => this.setMode('local'));
