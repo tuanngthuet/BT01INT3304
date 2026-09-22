@@ -108,7 +108,8 @@ class OTTGame {
     this.gameOver = false;
     this.mode = 'local'; // 'local' | 'ai' | 'online'
     this.sounds = new SoundController();
-    this.timerSeconds = 30;
+    this.p1Time = 240;
+    this.p2Time = 240;
     this.timerInterval = null;
     this.lastMove = null; // { from: {col, row}, to: {col, row} }
 
@@ -120,13 +121,10 @@ class OTTGame {
     this.render();
     this.startTimer();
   }
-
-  /**
+/**
    * Khởi tạo quân cờ ban đầu trên bàn cờ 9x9:
-   * Hàng 2 (row index 1): 9 quân của Người chơi 1 (3 Đấm, 3 Lá, 3 Kéo xen kẽ đối xứng)
-   * Hàng 8 (row index 7): 9 quân của Người chơi 2 (3 Đấm, 3 Lá, 3 Kéo)
-   * Ô a1 (0, 0): Căn cứ mục tiêu của P1 (đối thủ P2 cần xâm nhập để thắng)
-   * Ô i9 (8, 8): Căn cứ mục tiêu của P2 (đối thủ P1 cần xâm nhập để thắng)
+   * Cột được đánh dấu từ a -> i (index 0 -> 8)
+   * Hàng được đánh dấu từ 1 -> 9 (index 0 -> 8)
    */
   initBoard() {
     this.board = Array(9).fill(null).map(() => Array(9).fill(null));
@@ -137,35 +135,45 @@ class OTTGame {
     this.gameOver = false;
     this.lastMove = null;
 
-    const p1Pattern = [
-      'ROCK', 'PAPER', 'SCISSORS',
-      'ROCK', 'PAPER', 'SCISSORS',
-      'ROCK', 'PAPER', 'SCISSORS'
-    ];
+    // Hàm tiện ích: Đặt quân cờ dựa trên tọa độ chuỗi (vd: '4b' hoặc 'b4')
+    const placePiece = (player, type, pos) => {
+      const colStr = pos.match(/[a-i]/i)[0].toLowerCase();
+      const rowStr = pos.match(/[1-9]/)[0];
+      
+      const col = colStr.charCodeAt(0) - 'a'.charCodeAt(0);
+      const row = parseInt(rowStr) - 1;
+      
+      this.board[row][col] = { player, type };
+    };
 
-    const p2Pattern = [
-      'SCISSORS', 'PAPER', 'ROCK',
-      'SCISSORS', 'PAPER', 'ROCK',
-      'SCISSORS', 'PAPER', 'ROCK'
-    ];
+    // ==========================================
+    // THIẾT LẬP QUÂN CHO PLAYER 1 (Lùi về 1 ô)
+    // ==========================================
 
-    // Xếp quân Player 1 ở hàng 2 (index 1)
-    for (let c = 0; c < 9; c++) {
-      this.board[1][c] = {
-        player: 1,
-        type: p1Pattern[c]
-      };
-    }
+    // 1. 3 quân Kéo (SCISSORS)
+    ['5c', '4d', '3e'].forEach(pos => placePiece(1, 'SCISSORS', pos));
 
-    // Xếp quân Player 2 ở hàng 8 (index 7)
-    for (let c = 0; c < 9; c++) {
-      this.board[7][c] = {
-        player: 2,
-        type: p2Pattern[c]
-      };
-    }
+    // 2. 4 quân Giấy/Bao (PAPER)
+    ['5b', '4c', '3d', '2e'].forEach(pos => placePiece(1, 'PAPER', pos));
+
+    // 3. 3 quân Đá/Đấm (ROCK)
+    ['4b', '3c', '2d'].forEach(pos => placePiece(1, 'ROCK', pos));
+
+
+    // ==========================================
+    // THIẾT LẬP QUÂN CHO PLAYER 2
+    // (Đối xứng với P1 qua đường chéo 9a -> 1i)
+    // ==========================================
+
+    // 1. 3 quân Kéo (SCISSORS) - Đối xứng với (5c, 4d, 3e)
+    ['7e', '6f', '5g'].forEach(pos => placePiece(2, 'SCISSORS', pos));
+
+    // 2. 4 quân Giấy/Bao (PAPER) - Đối xứng với (5b, 4c, 3d, 2e)
+    ['8e', '7f', '6g', '5h'].forEach(pos => placePiece(2, 'PAPER', pos));
+
+    // 3. 3 quân Đá/Đấm (ROCK) - Đối xứng với (4b, 3c, 2d)
+    ['8f', '7g', '6h'].forEach(pos => placePiece(2, 'ROCK', pos));
   }
-
   bindEvents() {
     // Nút chế độ chơi
     document.getElementById('btnModeLocal').addEventListener('click', () => this.setMode('local'));
@@ -207,43 +215,74 @@ class OTTGame {
 
   restart() {
     clearInterval(this.timerInterval);
+    
+    this.p1Time = 240;
+    this.p2Time = 240;
     this.initBoard();
     this.render();
     this.startTimer();
     this.updateStatusSummary('Ván đấu mới đã bắt đầu!');
   }
 
-  startTimer() {
-    clearInterval(this.timerInterval);
-    this.timerSeconds = 30;
-    this.updateTimerDisplay();
+formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+}
 
-    this.timerInterval = setInterval(() => {
-      if (this.gameOver) {
-        clearInterval(this.timerInterval);
+startTimer() {
+  clearInterval(this.timerInterval);
+  this.updateTimerDisplay();
+
+  this.timerInterval = setInterval(() => {
+    if (this.gameOver) {
+      clearInterval(this.timerInterval);
+      return;
+    }
+
+    if (this.currentTurn === 1) {
+      this.p1Time--;
+      if (this.p1Time <= 0) {
+        this.p1Time = 0;
+        this.updateTimerDisplay();
+        this.endGame(2, 'Người chơi 1 (Xanh) đã hết thời gian!');
         return;
       }
-      this.timerSeconds--;
-      this.updateTimerDisplay();
-
-      if (this.timerSeconds <= 0) {
-        // Hết giờ lượt đi: Chuyển lượt hoặc xử thua
-        this.switchTurn(true);
-      }
-    }, 1000);
-  }
-
-  updateTimerDisplay() {
-    const timerElem = document.getElementById('turnTimer');
-    if (timerElem) {
-      timerElem.textContent = `${this.timerSeconds}s`;
-      if (this.timerSeconds <= 5) {
-        timerElem.style.color = '#ef4444';
-      } else {
-        timerElem.style.color = '#f0f6fc';
+    } else {
+      this.p2Time--;
+      if (this.p2Time <= 0) {
+        this.p2Time = 0;
+        this.updateTimerDisplay();
+        this.endGame(1, 'Người chơi 2 (Đỏ) đã hết thời gian!');
+        return;
       }
     }
+
+    this.updateTimerDisplay();
+  }, 1000);
+}
+
+updateTimerDisplay() {
+  const timerElem = document.getElementById('turnTimer');
+  const p1TimerElem = document.getElementById('p1Timer');
+  const p2TimerElem = document.getElementById('p2Timer');
+
+  const p1Str = this.formatTime(this.p1Time);
+  const p2Str = this.formatTime(this.p2Time);
+
+  if (p1TimerElem) p1TimerElem.textContent = p1Str;
+  if (p2TimerElem) p2TimerElem.textContent = p2Str;
+
+  if (timerElem) {
+    timerElem.textContent = `P1: ${p1Str} | P2: ${p2Str}`;
+    const activeTime = this.currentTurn === 1 ? this.p1Time : this.p2Time;
+    if (activeTime <= 30) {
+      timerElem.style.color = '#ef4444';
+    } else {
+      timerElem.style.color = '#f0f6fc';
+    }
   }
+}
 
   /**
    * Kiểm tra khả năng ăn quân theo chuẩn luật Oẳn tù tì:
@@ -381,17 +420,12 @@ class OTTGame {
     }
   }
 
-  switchTurn(isTimeout = false) {
-    this.currentTurn = this.currentTurn === 1 ? 2 : 1;
-    this.startTimer();
-    this.render();
-
-    if (isTimeout) {
-      this.updateStatusSummary(`Hết thời gian! Lượt đi chuyển sang ${this.getTurnName(this.currentTurn)}.`);
-    } else {
-      this.updateStatusSummary(`Lượt của ${this.getTurnName(this.currentTurn)}.`);
-    }
-  }
+switchTurn() {
+  this.currentTurn = this.currentTurn === 1 ? 2 : 1;
+  this.startTimer();
+  this.render();
+  this.updateStatusSummary(`Lượt của ${this.getTurnName(this.currentTurn)}.`);
+}
 
   getTurnName(player) {
     return player === 1 ? 'Người chơi 1 (Xanh)' : 'Người chơi 2 (Đỏ)';
