@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OTTv2 - Multiplayer Server Hub (playfull.html)</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <!-- Thư viện PlayHTML & PeerJS & Socket.IO cho phép Server đồng bộ nhiều người chơi -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="https://unpkg.com/playhtml"></script>
+  <style>
+    .server-banner {
+      grid-column: 1 / -1;
+      background: linear-gradient(135deg, #1e1b4b, #312e81);
+      border: 1px solid #4338ca;
+      padding: 12px 20px;
+      border-radius: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.9rem;
+    }
+    .server-badge {
+      background: #10b981;
+      color: #064e3b;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-weight: 700;
+      font-size: 0.75rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .server-badge::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      background: #047857;
+      border-radius: 50%;
+      display: inline-block;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.9); opacity: 0.7; }
+      50% { transform: scale(1.3); opacity: 1; }
+      100% { transform: scale(0.9); opacity: 0.7; }
+    }
+    .lobby-bar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Server Status Banner (Yêu cầu Bài 2) -->
+    <div class="server-banner">
+      <div>
+        <span class="server-badge">SERVER LIVE</span>
+        <strong style="margin-left: 10px;">playfull.html Server Hub</strong>: Đồng bộ nhiều phòng chơi cùng lúc qua Socket.IO / WebRTC PeerJS
+      </div>
+      <div class="lobby-bar">
+        <button id="btnQuickMatch" class="btn-primary">⚡ Ghép trận nhanh</button>
+        <a href="index.html" class="btn-secondary" style="text-decoration: none; display: inline-flex; align-items: center;">🏠 Về bản Offline</a>
+      </div>
+    </div>
+
+    <!-- Header -->
+    <header class="game-header">
+      <div class="brand">
+        <div class="logo-icon">🌐⚔️</div>
+        <div>
+          <h1>OẲN TÙ TÌ v2 <span class="badge-v2">MULTIPLAYER</span></h1>
+          <p class="subtitle">Bàn cờ 9x9 • Hệ thống nhiều phòng chơi trực tuyến</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div class="mode-selector">
+          <button class="btn-mode active" id="btnOnlineActive">🌐 Phòng Online</button>
+        </div>
+        <div class="utility-buttons">
+          <button id="btnSoundToggle" class="btn-icon" title="Bật/Tắt Âm thanh">🔊</button>
+          <button id="btnRules" class="btn-icon">📖 Luật chơi</button>
+          <button id="btnOpenRooms" class="btn-secondary">🔑 Đổi phòng</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Game Area -->
+    <main class="game-main">
+      <!-- Player 2 Panel (Đỏ) -->
+      <section class="player-panel player-2" id="panelP2">
+        <div class="player-info">
+          <div class="avatar p2-avatar">🔴</div>
+          <div class="player-meta">
+            <span class="player-name" id="p2Name">Người chơi 2 (Đỏ)</span>
+            <span class="player-role" id="p2Role">Phòng ngự ô a1 • Tấn công ô i9</span>
+          </div>
+          <div class="turn-badge" id="p2TurnBadge">LƯỢT ĐI</div>
+        </div>
+
+        <div class="piece-inventory">
+          <div class="inv-item" id="p2RockCount" title="Quân Đấm">
+            <span class="inv-icon">✊</span>
+            <span class="inv-num">3/3</span>
+          </div>
+          <div class="inv-item" id="p2PaperCount" title="Quân Lá">
+            <span class="inv-icon">✋</span>
+            <span class="inv-num">3/3</span>
+          </div>
+          <div class="inv-item" id="p2ScissorsCount" title="Quân Kéo">
+            <span class="inv-icon">✌️</span>
+            <span class="inv-num">3/3</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Board Wrapper -->
+      <div class="board-wrapper">
+        <div class="board-coords-x top-coords">
+          <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span><span>i</span>
+        </div>
+
+        <div class="board-center-row">
+          <div class="board-coords-y left-coords">
+            <span>9</span><span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span>
+          </div>
+
+          <!-- BÀN CỜ 9x9 -->
+          <div class="board-grid" id="boardGrid"></div>
+
+          <div class="board-coords-y right-coords">
+            <span>9</span><span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span>
+          </div>
+        </div>
+
+        <div class="board-coords-x bottom-coords">
+          <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span><span>i</span>
+        </div>
+      </div>
+
+      <!-- Player 1 Panel (Xanh) -->
+      <section class="player-panel player-1" id="panelP1">
+        <div class="player-info">
+          <div class="avatar p1-avatar">🔵</div>
+          <div class="player-meta">
+            <span class="player-name" id="p1Name">Người chơi 1 (Xanh)</span>
+            <span class="player-role" id="p1Role">Phòng ngự ô a1 • Tấn công ô i9</span>
+          </div>
+          <div class="turn-badge active" id="p1TurnBadge">LƯỢT ĐI</div>
+        </div>
+
+        <div class="piece-inventory">
+          <div class="inv-item" id="p1RockCount" title="Quân Đấm">
+            <span class="inv-icon">✊</span>
+            <span class="inv-num">3/3</span>
+          </div>
+          <div class="inv-item" id="p1PaperCount" title="Quân Lá">
+            <span class="inv-icon">✋</span>
+            <span class="inv-num">3/3</span>
+          </div>
+          <div class="inv-item" id="p1ScissorsCount" title="Quân Kéo">
+            <span class="inv-icon">✌️</span>
+            <span class="inv-num">3/3</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Sidebar: Game Status & Online Rooms -->
+    <aside class="game-sidebar">
+      <div class="card status-card">
+        <h3>⚡ Trạng thái Server & Phòng</h3>
+        <div class="status-turn-box">
+          <span class="label">Mã phòng:</span>
+          <span class="turn-highlight" id="activeRoomCodeDisplay">Chưa kết nối</span>
+        </div>
+        <div class="status-turn-box">
+          <span class="label">Vai trò của bạn:</span>
+          <span class="turn-highlight" id="myRoleDisplay">Khán giả / Đang chờ</span>
+        </div>
+        <div class="timer-box">
+          <span class="timer-icon">⏱️</span>
+          <span class="timer-text" id="turnTimer">30s</span>
+        </div>
+        <div class="status-summary" id="gameStatusSummary">
+          Sẵn sàng kết nối. Mời bạn tạo phòng hoặc nhập mã phòng để bắt đầu thi đấu.
+        </div>
+      </div>
+
+      <!-- Khung chat trong phòng -->
+      <div class="card history-card" style="max-height: 280px;">
+        <div class="history-header">
+          <h3>💬 Chat trực tiếp</h3>
+          <span class="move-count" id="onlineUserCount">2 người xem</span>
+        </div>
+        <div class="history-list" id="chatList" style="max-height: 150px;">
+          <div class="empty-history">Chào mừng đến với máy chủ OTTv2!</div>
+        </div>
+        <div class="copy-input-group" style="margin-top: 8px;">
+          <input type="text" id="chatInput" placeholder="Nhập tin nhắn..." />
+          <button id="btnSendChat" class="btn-primary">Gửi</button>
+        </div>
+      </div>
+
+      <!-- Khung luật nhanh -->
+      <div class="card rps-guide-card">
+        <h4>⚔️ Quy tắc OTTv2</h4>
+        <div class="rps-cycle">
+          <span class="cycle-item">✊ Đấm</span>
+          <span class="cycle-arrow">▶</span>
+          <span class="cycle-item">✌️ Kéo</span>
+          <span class="cycle-arrow">▶</span>
+          <span class="cycle-item">✋ Lá</span>
+          <span class="cycle-arrow">▶</span>
+          <span class="cycle-item">✊ Đấm</span>
+        </div>
+        <p class="rps-note">✨ Thắng bằng cách ăn sạch 1 loại quân của đối phương HOẶC đi vào ô a1/i9!</p>
+      </div>
+    </aside>
+  </div>
+
+  <!-- MODAL: Hướng Dẫn Luật Chơi OTTv2 -->
+  <div class="modal-backdrop" id="rulesModal">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h2>📖 Luật Chơi Oẳn Tù Tì v2 (OTTv2)</h2>
+        <button class="btn-close" id="btnCloseRules">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="rule-section">
+          <h3>1. Bàn cờ 9x9 & Quân cờ</h3>
+          <p>
+            • Mỗi người chơi có 3 loại quân: <strong>✊ Đấm</strong>, <strong>✋ Lá</strong>, <strong>✌️ Kéo</strong> (mỗi loại 3 quân, tổng 9 quân xếp ở hàng 2 và hàng 8).<br>
+            • Cột: a-i, Hàng: 1-9.
+          </p>
+        </div>
+        <div class="rule-section">
+          <h3>2. Di chuyển 8 hướng</h3>
+          <p>• Mỗi quân di chuyển 1 ô theo 8 hướng (ngang, dọc, chéo) giống quân Vua trong cờ vua.</p>
+        </div>
+        <div class="rule-section">
+          <h3>3. Ăn quân & Chặn đường</h3>
+          <p>
+            • Đấm ăn Kéo, Kéo ăn Lá, Lá ăn Đấm.<br>
+            • <strong>Hai quân cùng loại không thể ăn nhau mà chỉ đứng chặn đường nhau.</strong><br>
+            • Quân yếu hơn không thể tấn công quân mạnh hơn.
+          </p>
+        </div>
+        <div class="rule-section highlight-section">
+          <h3>🏆 Điều kiện thắng</h3>
+          <p>
+            1. Ăn hết sạch hoàn toàn 1 loại quân của đối thủ (hết Đấm, hết Lá, hoặc hết Kéo) &rarr; THẮNG!<br>
+            2. Đưa bất kỳ quân nào vào ô căn cứ đối thủ (P1 vào <strong>i9</strong>, P2 vào <strong>a1</strong>) &rarr; THẮNG!
+          </p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-primary" id="btnUnderstand">Đã Hiểu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Chơi Online Nhiều Người (Server / P2P Room) -->
+  <div class="modal-backdrop show" id="onlineModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>🌐 Kết Nối Phòng Chơi Server (playfull.html)</h2>
+        <button class="btn-close" id="btnCloseOnline">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="online-desc">
+          Chọn tạo phòng mới hoặc tham gia phòng thi đấu có sẵn qua mạng.
+        </p>
+
+        <div class="online-tabs">
+          <button class="tab-btn active" id="tabCreateRoom">Tạo phòng mới</button>
+          <button class="tab-btn" id="tabJoinRoom">Vào phòng có sẵn</button>
+        </div>
+
+        <div class="tab-content" id="createRoomContent">
+          <p>Bấm tạo phòng để nhận mã phòng và gửi cho đối thủ:</p>
+          <button id="btnDoCreateRoom" class="btn-primary btn-block">Tạo phòng ngay 🚀</button>
+          <div class="room-share-box" id="roomShareBox" style="display:none; margin-top: 12px;">
+            <label>Mã phòng của bạn:</label>
+            <div class="copy-input-group">
+              <input type="text" id="createdRoomCode" readonly />
+              <button id="btnCopyCode" class="btn-secondary">Sao chép</button>
+            </div>
+            <p class="share-hint">Gửi mã này cho bạn bè hoặc mở 1 tab trình duyệt khác để chơi cùng!</p>
+            <div class="connection-status" id="createStatus">⏳ Đang đợi đối thủ kết nối...</div>
+          </div>
+        </div>
+
+        <div class="tab-content" id="joinRoomContent" style="display:none;">
+          <label for="inputJoinCode">Nhập mã phòng:</label>
+          <div class="join-input-group">
+            <input type="text" id="inputJoinCode" placeholder="Ví dụ: ott-5678" />
+            <button id="btnDoJoinRoom" class="btn-primary">Tham gia ⚔️</button>
+          </div>
+          <div class="connection-status" id="joinStatus"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Chiến Thắng -->
+  <div class="modal-backdrop" id="victoryModal">
+    <div class="modal-card victory-card">
+      <div class="victory-icon" id="victoryIcon">🏆</div>
+      <h2 id="victoryTitle">CHIẾN THẮNG!</h2>
+      <p class="victory-reason" id="victoryReason"></p>
+      <div class="modal-footer centered">
+        <button id="btnPlayAgain" class="btn-primary">Chơi Lại Ván Mới 🔄</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Nhúng game engine & multiplayer controller -->
+  <script src="game.js"></script>
+  <script src="online.js"></script>
+  <script>
+    // Bổ sung các tính năng riêng cho playfull.html (Chat trong phòng, cập nhật UI Lobby)
+    window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('btnOpenRooms').addEventListener('click', () => {
+        document.getElementById('onlineModal').classList.add('show');
+      });
+
+      document.getElementById('btnQuickMatch').addEventListener('click', () => {
+        document.getElementById('btnDoCreateRoom').click();
+      });
+
+      // Xử lý gửi tin nhắn chat
+      const chatInput = document.getElementById('chatInput');
+      const btnSendChat = document.getElementById('btnSendChat');
+      const chatList = document.getElementById('chatList');
+
+      function sendChatMessage() {
+        const text = chatInput.value.trim();
+        if (!text) return;
+        const msgElem = document.createElement('div');
+        msgElem.className = 'history-entry';
+        msgElem.textContent = `[Bạn]: ${text}`;
+        chatList.appendChild(msgElem);
+        chatInput.value = '';
+        chatList.scrollTop = chatList.scrollHeight;
+
+        // Nếu có kết nối P2P thì gửi sang đối thủ
+        if (window.ottOnline && window.ottOnline.conn && window.ottOnline.conn.open) {
+          window.ottOnline.conn.send({ type: 'chat', text });
+        }
+      }
+
+      btnSendChat.addEventListener('click', sendChatMessage);
+      chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') sendChatMessage();
+      });
+    });
+  </script>
+</body>
+</html>
