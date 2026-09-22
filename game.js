@@ -216,6 +216,7 @@ class OTTGame {
 
   restart() {
     clearInterval(this.timerInterval);
+    
     this.p1Time = 240;
     this.p2Time = 240;
     this.initBoard();
